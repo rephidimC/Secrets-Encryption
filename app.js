@@ -24,26 +24,33 @@ app.use(bodyParser.urlencoded({
   extended: true
 }));
 
+//the following are for express-session.
+//it is important to place the code here
 
+app.use(session({
+  secret: "A secret is a good thing to keep",
+  //this secret is to be kept safe and remembered consistently.
+  resave: false,
+  saveUninitialized: false,
+  cookie: {}
+}));
 
-
+app.use(passport.initialize());
+app.use(passport.session());
 
 mongoose.connect("mongodb://localhost:27017/secretsDB", {
   useUnifiedTopology: true,
   useNewUrlParser: true,
-  useFindAndModify: false
+  useFindAndModify: false,
+  useCreateIndex: true
 });
 
 const userSchema = new mongoose.Schema({
-  email: {
-    type: String,
-    required: [true, "A must to have a name"]
-  },
-  password: {
-    type: String,
-    required: [true, "A must to have a body"]
-  }
+  email: String,
+  password: String
 });
+
+userSchema.plugin(passportLocalMongoose);
 
 //ENCRYPTION KEY SET BY ---var secret = "XXX";
 // to encrypt the above key, we need environment variable, hence, we cut the above and move to .env file.
@@ -65,6 +72,16 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", userSchema);
 
+// use static authenticate method of model in LocalStrategy
+passport.use(User.createStrategy());
+
+// use static serialize and deserialize of model for passport session support
+//only necessary when using sessions.
+passport.serializeUser(User.serializeUser());
+//serialize stores data(cookie)
+passport.deserializeUser(User.deserializeUser());
+//deserialize allows passport to destroy the cookie
+
 app.use(express.static("public"));
 
 app.get("/", function(req, res) {
@@ -79,20 +96,52 @@ app.get("/register", function(req, res) {
   res.render("register");
 });
 
-app.get("/secrets", function(req, res) {
-  res.render("secrets");
-});
-
 app.get("/submit", function(req, res) {
   res.render("submit");
 });
 
-app.post("/register", function(req, res) {
+app.get("/secrets", function(req, res) {
+  if (req.isAuthenticated()){
+    res.render("secrets");
+  } else {
+    res.redirect("/login");
+  }
+});
 
+app.get("/logout", function(req, res) {
+  req.logout();
+  res.redirect("/");
+});
+
+app.post("/register", function(req, res) {
+  User.register({username:req.body.username, active: false}, req.body.password, function(err, user) {
+    if (err) {
+      console.log(err);
+      res.redirect("/register");
+    } else {
+      passport.authenticate("local")(req, res, function(){
+        res.redirect("/secrets");
+      });
+      //the above line ofcode tells the browser to have a cookie, which it holds on to until the browser session expires.
+    }
+  });
 });
 
 app.post("/login", function(req, res) {
+  const user = new User({
+    username: req.body.username,
+    password: req.body.password
+  });
 
+  req.login(user, function (err){
+    if (err) {
+      console.log(err);
+    } else {
+      passport.authenticate("local")(req, res, function(){
+        res.redirect("/secrets");
+      });
+    }
+  });
 });
 
 app.listen(3000, function() {
