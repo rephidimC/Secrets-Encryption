@@ -11,6 +11,11 @@ const _ = require("lodash");
 
 const app = express();
 const path = require("path");
+const session = require("express-session");
+const passport = require("passport");
+const passportLocalMongoose = require("passport-local-mongoose");
+//we don't need to require passport mongoose as its one of the dependencies to be requested by passport-local-mongoose.
+
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -20,8 +25,6 @@ app.use(bodyParser.urlencoded({
 }));
 
 
-const bcrypt = require('bcrypt');
-const saltRounds = 10;
 
 
 
@@ -85,52 +88,11 @@ app.get("/submit", function(req, res) {
 });
 
 app.post("/register", function(req, res) {
-  const usernameInput = req.body.username;
-  const password = req.body.password;
 
-  bcrypt.hash(password, saltRounds, function(err, hash) {
-    // Store hash in your password DB.
-    const newUser = new User({
-      email: usernameInput,
-      password: hash
-    });
-
-    newUser.save(function(err) {
-      if (!err) {
-        res.render("secrets");
-      }
-      else {
-        console.log(err);
-        res.render("error 404");
-      }
-    });
-  });
 });
 
 app.post("/login", function(req, res) {
-  const usernameInput = req.body.username;
-  const passwordInput = req.body.password;
 
-  // const hashUsernameInput = md5(usernameInput);
-  // const hashPassword = md5(passwordInput);
-
-
-    // result == true
-    User.findOne({ email: usernameInput }, function(err, foundData) {
-      if (foundData) {
-        bcrypt.compare(passwordInput, foundData.password).then(function(result) {
-          if (result === true) {
-            res.render("secrets");
-          }
-          else {
-            res.render("login");
-          }
-        });
-      } else {
-        console.log(err);
-        res.render("login");
-      }
-    });
 });
 
 app.listen(3000, function() {
