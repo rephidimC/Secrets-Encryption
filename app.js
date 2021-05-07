@@ -1,8 +1,10 @@
 //jshint esversion:6
 require('dotenv').config();
+const md5 = require("md5");
 const express = require("express");
 const mongoose = require("mongoose");
-const encrypt = require('mongoose-encryption');
+// const encrypt = require('mongoose-encryption');
+// removed because we're no longer encrypting but hashing
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
 const _ = require("lodash");
@@ -10,6 +12,7 @@ const _ = require("lodash");
 const app = express();
 const path = require("path");
 
+console.log(md5('message'));
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -49,8 +52,8 @@ const userSchema = new mongoose.Schema({
 // userSchema.plugin(encrypt, { secret: secret, encryptedFields: ["password"] });
 //the above without ENCRYPTION
 
-userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"] });
-
+// userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"] });
+// removed because we're no longer encrypting but hashing
 
 
 const User = mongoose.model("User", userSchema);
@@ -81,9 +84,12 @@ app.post("/register", function(req, res) {
   const usernameInput = req.body.username;
   const password = req.body.password;
 
+  const hashUsernameInput = md5(usernameInput);
+  const hashPassword = md5(password);
+
   const newUser = new User({
-    email: usernameInput,
-    password: password,
+    email: hashUsernameInput,
+    password: hashPassword,
   });
 
   newUser.save(function(err) {
@@ -101,9 +107,12 @@ app.post("/login", function(req, res) {
   const usernameInput = req.body.username;
   const passwordInput = req.body.password;
 
-  User.findOne({ email: usernameInput }, function(err, foundData) {
+  const hashUsernameInput = md5(usernameInput);
+  const hashPassword = md5(passwordInput)
+
+  User.findOne({ email: hashUsernameInput }, function(err, foundData) {
     if (foundData) {
-      if (foundData.password === passwordInput) {
+      if (foundData.password === hashPassword) {
         res.render("secrets");
       }
     } else {
