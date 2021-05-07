@@ -1,6 +1,6 @@
 //jshint esversion:6
 require('dotenv').config();
-const md5 = require("md5");
+
 const express = require("express");
 const mongoose = require("mongoose");
 // const encrypt = require('mongoose-encryption');
@@ -12,14 +12,18 @@ const _ = require("lodash");
 const app = express();
 const path = require("path");
 
-console.log(md5('message'));
-
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
 app.use(bodyParser.urlencoded({
   extended: true
 }));
+
+
+const bcrypt = require('bcrypt');
+const saltRounds = 10;
+
+
 
 mongoose.connect("mongodb://localhost:27017/secretsDB", {
   useUnifiedTopology: true,
@@ -84,42 +88,49 @@ app.post("/register", function(req, res) {
   const usernameInput = req.body.username;
   const password = req.body.password;
 
-  const hashUsernameInput = md5(usernameInput);
-  const hashPassword = md5(password);
+  bcrypt.hash(password, saltRounds, function(err, hash) {
+    // Store hash in your password DB.
+    const newUser = new User({
+      email: usernameInput,
+      password: hash
+    });
 
-  const newUser = new User({
-    email: hashUsernameInput,
-    password: hashPassword,
+    newUser.save(function(err) {
+      if (!err) {
+        res.render("secrets");
+      }
+      else {
+        console.log(err);
+        res.render("error 404");
+      }
+    });
   });
-
-  newUser.save(function(err) {
-    if (!err) {
-      res.render("secrets");
-    }
-    else {
-      console.log(err);
-      res.render("error 404");
-    }
-  })
 });
 
 app.post("/login", function(req, res) {
   const usernameInput = req.body.username;
   const passwordInput = req.body.password;
 
-  const hashUsernameInput = md5(usernameInput);
-  const hashPassword = md5(passwordInput)
+  // const hashUsernameInput = md5(usernameInput);
+  // const hashPassword = md5(passwordInput);
 
-  User.findOne({ email: hashUsernameInput }, function(err, foundData) {
-    if (foundData) {
-      if (foundData.password === hashPassword) {
-        res.render("secrets");
+
+    // result == true
+    User.findOne({ email: usernameInput }, function(err, foundData) {
+      if (foundData) {
+        bcrypt.compare(passwordInput, foundData.password).then(function(result) {
+          if (result === true) {
+            res.render("secrets");
+          }
+          else {
+            res.render("login");
+          }
+        });
+      } else {
+        console.log(err);
+        res.render("login");
       }
-    } else {
-      console.log(err);
-      res.render("login");
-    }
-  });
+    });
 });
 
 app.listen(3000, function() {
