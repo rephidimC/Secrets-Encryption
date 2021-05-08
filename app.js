@@ -15,6 +15,9 @@ const session = require("express-session");
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
 //we don't need to require passport mongoose as its one of the dependencies to be requested by passport-local-mongoose.
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const findOrCreate = require('mongoose-findorcreate');
+
 
 
 app.set('view engine', 'ejs');
@@ -47,10 +50,15 @@ mongoose.connect("mongodb://localhost:27017/secretsDB", {
 
 const userSchema = new mongoose.Schema({
   email: String,
-  password: String
+  password: String,
+  // -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
+  // the above are used when we run the authentication locally, but if its an external one, we need to add an extra field, as below
+  // -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
+  googleId: String
 });
 
 userSchema.plugin(passportLocalMongoose);
+userSchema.plugin(findOrCreate);
 
 //ENCRYPTION KEY SET BY ---var secret = "XXX";
 // to encrypt the above key, we need environment variable, hence, we cut the above and move to .env file.
@@ -60,7 +68,7 @@ userSchema.plugin(passportLocalMongoose);
 // db.connect({
 //   // host: process.env.DB_HOST,
 //   // username: process.env.DB_USER,
-//   password: process.env.SECRET
+//
 // })
 
 // userSchema.plugin(encrypt, { secret: secret, encryptedFields: ["password"] });
@@ -74,19 +82,66 @@ const User = mongoose.model("User", userSchema);
 
 // use static authenticate method of model in LocalStrategy
 passport.use(User.createStrategy());
-
+// -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
 // use static serialize and deserialize of model for passport session support
 //only necessary when using sessions.
-passport.serializeUser(User.serializeUser());
-//serialize stores data(cookie)
-passport.deserializeUser(User.deserializeUser());
+
+// -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
+// passport.serializeUser(User.serializeUser());
+// //serialize stores data(cookie)
+// passport.deserializeUser(User.deserializeUser());
 //deserialize allows passport to destroy the cookie
+// -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
+// the above are used for local operations, but when we need to use external ones like google to authenticate, we need something global, which also works for local.
+// -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
+passport.serializeUser(function(user, done) {
+  done(null, user.id);
+});
+
+passport.deserializeUser(function(id, done) {
+  User.findById(id, function(err, user) {
+    done(err, user);
+  });
+});
+
+
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    // 817778500263-ikt9rvgjrad72g231a1hra3vcvtagl7g.apps.googleusercontent.com,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets"
+    // http://www.example.com/auth/google/callback
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    //accessToken-allows us to access user data
+    //refreshToken-allows us access for a longer period of time
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
 
 app.use(express.static("public"));
 
 app.get("/", function(req, res) {
   res.render("home");
 });
+
+app.get("/auth/google",
+  //why this? because we need to have a page that the google authentication route(button) in both the register and login goes to.
+  passport.authenticate("google",  { scope: [ "profile" ] })
+  //scope is to define what we want from the user's google account when they login
+);
+
+app.get("/auth/google/secrets",
+//where did we get this url from? we set it when setting up the google api
+  passport.authenticate("google", { failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, redirect to secrets.
+    res.redirect("/secrets");
+  });
 
 app.get("/login", function(req, res) {
   res.render("login");
