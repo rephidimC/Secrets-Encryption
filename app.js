@@ -16,6 +16,7 @@ const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
 //we don't need to require passport mongoose as its one of the dependencies to be requested by passport-local-mongoose.
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const FacebookStrategy = require('passport-facebook').Strategy;
 const findOrCreate = require('mongoose-findorcreate');
 
 
@@ -54,7 +55,12 @@ const userSchema = new mongoose.Schema({
   // -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
   // the above are used when we run the authentication locally, but if its an external one, we need to add an extra field, as below
   // -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
-  googleId: String
+  googleId: String,
+  facebookId: String,
+  // -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
+  // the below has just been added so we can add this extra field in the db for the submitted secret
+  // -------------------------------------xxxxxxxxxxxxxxxxxxxx--------------------------------------
+  secret: String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -122,6 +128,19 @@ passport.use(new GoogleStrategy({
   }
 ));
 
+passport.use(new FacebookStrategy({
+    clientID: process.env.CLIENTIDFB,
+    clientSecret: process.env.CLIENTSECRETFB,
+    callbackURL: "http://localhost:3000/auth/facebook/secrets"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    User.findOrCreate({ facebookId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
 
 app.use(express.static("public"));
 
@@ -137,11 +156,24 @@ app.get("/auth/google",
 
 app.get("/auth/google/secrets",
 //where did we get this url from? we set it when setting up the google api
-  passport.authenticate("google", { failureRedirect: '/login' }),
+  passport.authenticate("google", { failureRedirect: "/login" }),
   function(req, res) {
     // Successful authentication, redirect to secrets.
     res.redirect("/secrets");
-  });
+  }
+);
+
+app.get("/auth/facebook",
+  passport.authenticate("facebook", { scope: [ "profile" ] })
+);
+
+app.get("/auth/facebook/secrets",
+  passport.authenticate("facebook", { failureRedirect: "/login" }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect('/secrets');
+  }
+);
 
 app.get("/login", function(req, res) {
   res.render("login");
@@ -156,12 +188,53 @@ app.get("/submit", function(req, res) {
 });
 
 app.get("/secrets", function(req, res) {
+  // if (req.isAuthenticated()){
+  //   res.render("secrets");
+  // } else {
+  //   res.redirect("/login");
+  // }
+  // why are we removing the above? it isn't a priviledged page as anyone should be able to see the secrets posted anonymously whether signed in/not.
+  User.find({"secret": {$ne: null}}, function(err, foundUsers) {
+    if (err) {
+      console.log(err);
+    } else {
+      if (foundUsers) {
+        res.render("secrets", {usersWithSecrets: foundUsers});
+      }
+    }
+  });
+
+});
+
+app.get("/submit", function(req, res) {
   if (req.isAuthenticated()){
-    res.render("secrets");
+    res.render("submit");
   } else {
     res.redirect("/login");
   }
 });
+
+app.post("/submit", function(req, res) {
+  const submittedSecret= req.body.secret;
+  console.log(submittedSecret);
+  console.log(req.user.id);
+  // But we need to know which user submitted the secret, so we can save it in their file.
+  // req.user is passport's way of helping identify this.
+  // const secret = new Secret ({
+  //   secret: req.body.secret
+  // });
+  User.findById(req.user.id, function(err, foundUser) {
+    if (foundUser) {
+      foundUser.secret = submittedSecret;
+      foundUser.save(function(){
+        res.redirect("/secrets");
+      });
+    } else {
+      console.log(err);
+    }
+  });
+});
+
 
 app.get("/logout", function(req, res) {
   req.logout();
